@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Golpea al Topo PRO</title>
+
+<style>
+body{
+    margin:0;
+    font-family:Arial, sans-serif;
+    text-align:center;
+    color:white;
+    background: linear-gradient(180deg, #1e3c72, #2a5298);
+}
+
+/* ===== MENÚ ===== */
+#menu{
+    margin-top:150px;
+}
+
+#gameUI{
+    display:none;
+}
+
+button{
+    padding:12px 25px;
+    font-size:16px;
+    cursor:pointer;
+    border:none;
+    border-radius:8px;
+    background:#ffcc00;
+    font-weight:bold;
+    transition:0.2s;
+}
+
+button:hover{
+    transform:scale(1.1);
+}
+
+/* ===== CONTENEDOR ===== */
+#gameContainer{
+    position:relative;
+    width:900px;
+    height:500px;
+    margin:20px auto;
+    overflow:hidden;
+    border-radius:15px;
+    background: linear-gradient(to top, #3e8e41 40%, #87ceeb 40%);
+}
+
+/* ===== POZOS ===== */
+.hole{
+    position:absolute;
+    overflow:hidden;
+    cursor:pointer;
+}
+
+/* ===== TOPO ===== */
+.mole{
+    position:absolute;
+    bottom:-100%;
+    transition:bottom 0.25s ease-out;
+    pointer-events:none;
+    filter: drop-shadow(0px 6px 6px rgba(0,0,0,0.6));
+}
+
+.mole.up{
+    bottom:0;
+}
+
+#info{
+    font-size:20px;
+}
+</style>
+</head>
+<body>
+
+<!-- ===== MENÚ ===== -->
+<div id="menu">
+    <h1>🎯 Golpea al Topo 🎯</h1>
+    <button onclick="startGame()">Jugar</button>
+</div>
+
+<!-- ===== JUEGO ===== -->
+<div id="gameUI">
+    <h1>🎯 Golpea al Topo 🎯</h1>
+    <div id="info">
+        Puntos: <span id="score">0</span> |
+        Tiempo: <span id="time">30</span>
+    </div>
+
+    <button onclick="pauseGame()">⏸ Pausa</button>
+    <button onclick="goToMenu()">🏠 Menú</button>
+
+    <div id="gameContainer"></div>
+</div>
+
+<script>
+let score=0;
+let timeLeft=30;
+let gameInterval=null;
+let spawnTimeout=null;
+let activeMole=null;
+let gameRunning=false;
+let paused=false;
+
+/* ===== VARIABLES DE MÚSICA ===== */
+let audioCtx=null;
+let musicInterval=null;
+let currentOsc=null;
+
+/* ===== POSICIONES ===== */
+const holePositions=[
+    {top:335,left:95,size:130},
+    {top:320,left:255,size:120},
+    {top:335,left:455,size:130},
+    {top:305,left:645,size:115},
+    {top:245,left:175,size:100},
+    {top:235,left:390,size:95},
+    {top:225,left:600,size:90}
+];
+
+const game=document.getElementById("gameContainer");
+
+/* ===== CREAR POZOS ===== */
+holePositions.forEach(pos=>{
+    const hole=document.createElement("div");
+    hole.classList.add("hole");
+
+    hole.style.top=pos.top+"px";
+    hole.style.left=pos.left+"px";
+    hole.style.width=pos.size+"px";
+    hole.style.height=pos.size*0.6+"px";
+    hole.dataset.size=pos.size;
+
+    hole.addEventListener("click",()=>hitMole(hole));
+    game.appendChild(hole);
+});
+
+/* ===== INICIAR JUEGO ===== */
+function startGame(){
+    document.getElementById("menu").style.display="none";
+    document.getElementById("gameUI").style.display="block";
+
+    score=0;
+    timeLeft=30;
+    paused=false;
+    gameRunning=true;
+
+    document.getElementById("score").innerText=score;
+    document.getElementById("time").innerText=timeLeft;
+
+    clearAllTimers();
+    gameInterval=setInterval(updateTime,1000);
+    scheduleSpawn();
+
+    startMusic(); // 🎵 iniciar música
+}
+
+/* ===== PAUSA ===== */
+function pauseGame(){
+    if(!gameRunning) return;
+
+    const pauseBtn=document.querySelector("button[onclick='pauseGame()']");
+
+    if(!paused){
+        paused=true;
+        clearAllTimers();
+        stopMusic();
+        pauseBtn.innerText="▶ Reanudar";
+    }else{
+        paused=false;
+        gameInterval=setInterval(updateTime,1000);
+        scheduleSpawn();
+        startMusic();
+        pauseBtn.innerText="⏸ Pausa";
+    }
+}
+
+/* ===== TIEMPO ===== */
+function updateTime(){
+    if(paused) return;
+
+    timeLeft--;
+    document.getElementById("time").innerText=timeLeft;
+
+    if(timeLeft<=0){
+        endGame();
+    }
+}
+
+/* ===== SPAWN ===== */
+function scheduleSpawn(){
+    if(!gameRunning || paused) return;
+
+    spawnTimeout=setTimeout(()=>{
+        spawnMole();
+    },1000);
+}
+
+function spawnMole(){
+    if(!gameRunning || paused) return;
+    if(activeMole) return;
+
+    const holes=document.querySelectorAll(".hole");
+    const randomHole=holes[Math.floor(Math.random()*holes.length)];
+
+    const mole=document.createElement("img");
+    mole.src="topo.png";
+    mole.classList.add("mole");
+
+    const size=parseInt(randomHole.dataset.size);
+    mole.style.width=size*0.85+"px";
+    mole.style.left=size*0.075+"px";
+
+    randomHole.appendChild(mole);
+    activeMole=randomHole;
+
+    setTimeout(()=>mole.classList.add("up"),40);
+
+    spawnTimeout=setTimeout(()=>{
+        removeMole();
+        scheduleSpawn();
+    },1200);
+}
+
+/* ===== GOLPE ===== */
+function hitMole(hole){
+    if(!gameRunning || paused) return;
+
+    if(hole===activeMole){
+        score++;
+        document.getElementById("score").innerText=score;
+        removeMole();
+        scheduleSpawn();
+    }
+}
+
+function removeMole(){
+    const moles=document.querySelectorAll(".mole");
+    moles.forEach(m=>m.remove());
+    activeMole=null;
+}
+
+/* ===== FIN ===== */
+function endGame(){
+    gameRunning=false;
+    paused=false;
+    clearAllTimers();
+    stopMusic();
+    removeMole();
+    alert("⏰ Fin del juego! Puntos: "+score);
+    goToMenu();
+}
+
+function goToMenu(){
+    clearAllTimers();
+    stopMusic();
+    removeMole();
+    gameRunning=false;
+    paused=false;
+    document.getElementById("menu").style.display="block";
+    document.getElementById("gameUI").style.display="none";
+}
+
+function clearAllTimers(){
+    clearInterval(gameInterval);
+    clearTimeout(spawnTimeout);
+}
+
+/* ===== MÚSICA ARCADE ===== */
+function startMusic(){
+    audioCtx=new (window.AudioContext||window.webkitAudioContext)();
+
+    const notes=[220,262,294,330,349,392,440];
+
+    musicInterval=setInterval(()=>{
+        if(paused||!gameRunning) return;
+
+        if(currentOsc){
+            try{ currentOsc.stop(); }catch(e){}
+        }
+
+        const randomNote=notes[Math.floor(Math.random()*notes.length)];
+
+        const osc=audioCtx.createOscillator();
+        const gainNode=audioCtx.createGain();
+
+        osc.type="square";
+        osc.frequency.setValueAtTime(randomNote,audioCtx.currentTime);
+
+        gainNode.gain.setValueAtTime(0.05,audioCtx.currentTime);
+
+        osc.connect(gainNode);
+        gainNode.connect(audioCtx.destination);
+
+        osc.start();
+        osc.stop(audioCtx.currentTime+0.2);
+
+        currentOsc=osc;
+
+    },250);
+}
+
+function stopMusic(){
+    clearInterval(musicInterval);
+    if(currentOsc){
+        try{ currentOsc.stop(); }catch(e){}
+    }
+}
+</script>
+
+</body>
+</html>
